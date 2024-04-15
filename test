@@ -1,0 +1,139 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+import pandas as pd
+
+class ExcelViewer(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Excel Viewer")
+        self.excel_data = {category: [] for category in range(1, 14)}  # 每个分类对应一个列表
+        self.categories = {1: "分类1", 2: "分类2", 3: "分类3", 4: "分类4", 5: "分类5", 6: "分类6", 7: "分类7",
+                           8: "分类8", 9: "分类9", 10: "分类10", 11: "分类11", 12: "分类12", 13: "分类13"}
+
+        self.style = ttk.Style()
+        self.style.configure("TButton", padding=6, relief="flat", foreground="#333", background="#ccc")
+        self.style.configure("TLabel", padding=6, foreground="#333", background="#eee")
+        self.style.configure("TCombobox", padding=6, foreground="#333", background="#fff")
+
+        self.create_menu()
+        self.create_widgets()
+
+    def create_menu(self):
+        menu_bar = tk.Menu(self)
+        self.config(menu=menu_bar)
+
+        data_import_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="数据导入", menu=data_import_menu)
+        data_import_menu.add_command(label="导入Excel表", command=self.import_excel)
+        data_import_menu.add_command(label="清空数据", command=self.clear_data)
+        data_import_menu.add_command(label="删除选中表", command=self.delete_selected)
+
+    def create_widgets(self):
+        # 列表框显示导入的Excel表
+        self.listbox = tk.Listbox(self, width=50, height=10)
+        self.listbox.pack(padx=10, pady=5)
+        self.listbox.bind("<Double-Button-1>", self.show_excel_content)  # 绑定双击事件
+
+    def import_excel(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
+        if file_path:
+            try:
+                df = pd.read_excel(file_path)
+                category = self.select_category()
+                self.excel_data[category].append(file_path)  # 保存文件路径而不是DataFrame对象
+                self.listbox.insert(tk.END, f"{self.categories[category]} - {file_path}")
+                self.show_message(f"成功导入Excel表到 {self.categories[category]} 分类")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to import file: {e}")
+
+    def select_category(self):
+        category_dialog = tk.Toplevel(self)
+        category_dialog.title("选择分类")
+        ttk.Label(category_dialog, text="请选择要导入的分类：").pack()
+        category_var = tk.IntVar()
+        for category, name in self.categories.items():
+            rb = ttk.Radiobutton(category_dialog, text=name, value=category, variable=category_var)
+            rb.pack()
+        btn_confirm = ttk.Button(category_dialog, text="确认", command=category_dialog.destroy)
+        btn_confirm.pack()
+        category_dialog.wait_window()
+        return category_var.get()
+
+    def clear_data(self):
+        self.excel_data = {category: [] for category in range(1, 14)}
+        self.listbox.delete(0, tk.END)
+        self.show_message("成功清空所有数据")
+
+    def delete_selected(self):
+        selected_index = self.listbox.curselection()
+        if selected_index:
+            index = selected_index[0]
+            file_path = self.listbox.get(index)
+            for category, data in self.excel_data.items():
+                if file_path in data:
+                    data.remove(file_path)  # 删除文件路径
+            self.listbox.delete(index)
+            self.show_message(f"成功删除 {file_path}")
+
+    def show_excel_content(self, event):
+        index = self.listbox.nearest(event.y)
+        file_path = self.listbox.get(index).split(" - ")[1]
+        df = pd.read_excel(file_path)
+
+        content_window = tk.Toplevel(self)
+        content_window.title("表格内容")
+
+        # 添加筛选框和筛选按钮
+        filter_var = tk.StringVar()
+        filter_entry = ttk.Entry(content_window, textvariable=filter_var)
+        filter_entry.pack(padx=10, pady=5)
+
+        filter_button = ttk.Button(content_window, text="筛选", command=lambda: self.apply_filter(df, tree, filter_var.get()))
+        filter_button.pack(padx=10, pady=5)
+
+        columns = df.columns.tolist()
+        tree_frame = ttk.Frame(content_window)
+        tree_frame.pack(fill="both", expand=True)
+        tree = ttk.Treeview(tree_frame, columns=columns, show="headings")
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=100)  # 设置列宽度
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        vsb.pack(side="right", fill="y")
+        tree.configure(yscrollcommand=vsb.set)
+
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
+        hsb.pack(side="bottom", fill="x")
+        tree.configure(xscrollcommand=hsb.set)
+
+        for i, row in df.iterrows():
+            values = [cell if pd.notnull(cell) else "" for cell in row]  # 将NaN值替换为空字符串
+            tree.insert("", "end", values=values)
+
+        tree.pack(fill="both", expand=True)
+
+    def show_message(self, message):
+        message_box = tk.Toplevel(self)
+        message_box.title("操作结果")
+        ttk.Label(message_box, text=message).pack()
+        btn_ok = ttk.Button(message_box, text="OK", command=message_box.destroy)
+        btn_ok.pack()
+
+    def apply_filter(self, df, tree, filter_text):
+        filtered_df = df
+        for col in df.columns:
+            filter_entry = tree.children["!frame2"].children[col].children["!entry"]
+            filter_value = filter_entry.get()
+            if filter_value:
+                filtered_df = filtered_df[filtered_df[col].astype(str).str.contains(filter_value)]
+
+        for i in tree.get_children():
+            tree.delete(i)
+        for _, row in filtered_df.iterrows():
+            values = [cell if pd.notnull(cell) else "" for cell in row]
+            tree.insert("", "end", values=values)
+
+if __name__ == "__main__":
+    app = ExcelViewer()
+    app.mainloop()
